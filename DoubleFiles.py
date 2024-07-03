@@ -1,13 +1,38 @@
+# -*- coding: UTF-8 -*-
 import os,sys
 import hashlib
 import sqlite3
 import logging
 import traceback
-import subprocess
+import string
+import random
+import jwt as jwt_function type: ignore
+from flask import Flask, request, jsonify # type: ignore
+from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity # type: ingore
+
+
+
+
+
+def init_autenticacion():
+    min = string.ascii_lowercase
+    may = string.ascii_uppercase
+    num = string.digits
+    simbolos = "!@#$%&*_-+=()[]|;:./<>?"
+    all = min + may + num + simbolos
+    long = 24 #Largo de string resultante
+    password = "".join(random.choice(all) for a in range(long))
+    user= "".join(random.choice(min+may+num) for a in range(long))
+    secret_key = "".join(random.choice(min+may+num) for a in range(32))
+    return (user,password,secret_key)
+
+
 
 def create_file_config():
     configfile = os.path.dirname(os.path.abspath(__file__))+"\\config.py"
     if not os.path.exists(configfile):
+        USER_API, PASSWORD_API, SECRET_KEY = init_autenticacion()
+
         with open("config.py","w") as config:
             config.write("###Lista de Configuraciones###\n")
             config.write("#Nombre del Archivo de la base de datos\n")
@@ -26,6 +51,9 @@ def create_file_config():
             config.write("#El nivel de log puede ser: DEBUG,INFO,WARING,ERROR,CRITICAL\n")
             config.write("LOG_FILE= 'eventlog.log'\n")
             config.write("LOG_LEVEL = 'INFO'\n")
+            config.write("USER_API = '"+USER_API+"'\n")
+            config.write("PASSWORD_API = '"+PASSWORD_API+"'\n")
+            config.write("SECRET_KEY = '"+SECRET_KEY+"'\n")
 
 create_file_config()
 
@@ -35,6 +63,8 @@ except ImportError as e:
     create_file_config()
 
 ### Asignación de Variables
+
+
 try:
     LOG_LEVEL = config.LOG_LEVEL
 except AttributeError as e:
@@ -63,6 +93,18 @@ try:
     VIDEO_EXT = config.VIDEO_EXT
 except AttributeError as e:
     VIDEO_EXT = ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.mpeg', '.mpg', '.3gp', '.webm', '.ts']
+
+ListaDuplicados = []
+argumentos = sys.argv
+argv_val_ruta = 0
+argv_recursivo = 0
+argv_mov = 0
+mododesatendido = 0
+argv_ruta = ""
+
+USER_API=config.USER_API
+PASSWORD_API = config.PASSWORD_API
+SECRET_KEY=config.SECRET_KEY
 
 ### Inicializacion de Logs
 
@@ -143,7 +185,7 @@ def listaCompletaDuplicados():
     try:
         conn = sqlite3.connect(config.DATA_BASE)
         cursor = conn.cursor()
-        cursor.execute("SELECT ruta FROM archivos_duplicados")
+        cursor.execute("SELECT ruta,hash,fecha FROM archivos_duplicados")
         conn.commit()
         respuesta = cursor.fetchall()
         cursor.close()
@@ -170,7 +212,6 @@ def update_registro(ruta,hash,fecha):
                 
                 cursor.execute("SELECT ruta FROM archivos_duplicados WHERE ruta = ?",(ruta,))
                 resp = cursor.fetchone()
-                print(":::",resp)
                 if not resp:
                     cursor.execute("INSERT INTO archivos_duplicados (ruta,fecha,hash) VALUES (?,?,?) ",(ruta_db,fecha_db,hash))
                 conn.commit()
@@ -198,7 +239,7 @@ def inserta_registro(ruta,  hash):
         cursor = conn.cursor()
         # Ejecutar la consulta de inserción
         cursor.execute('INSERT INTO archivos (ruta, hash, fecha) VALUES (?, ?, ?)', (ruta, hash, os.path.getctime(ruta)))        
-        logger.debug (f"Se inserta ruta: {ruta} con hash: {hash}")
+        logger.debug (f"Se inserta ruta: {ruta} con hash: {hash}".encode("utf-8"))
         # Guardar los cambios
         conn.commit()
 
@@ -241,10 +282,10 @@ def hashfile(archivo):
         with open (archivo, 'rb') as file:
             for bloque in iter(lambda: file.read(4096), b""):
                 hasher.update(bloque)
-        logger.debug(f"Se obtiene hash de archivo {archivo}")
+        logger.debug(f"Se obtiene hash de archivo {archivo}".encode("utf-8"))
         return hasher.hexdigest()
     except FileNotFoundError as e:
-        logger.info(f"El archivo {archivo} ya no existe, no se podra procesar. Detalle {e}")
+        logger.info(f"El archivo {archivo} ya no existe, no se podra procesar. Detalle {e}".encode("utf-8"))
         return False
     except Exception as e:
         logger.error(e)
@@ -264,8 +305,8 @@ def val_file_size(path):
 
 def val_file_ext(path):
     ext = os.path.splitext(path)    
-    ext = str(ext[1])
-    logger.debug(f"Extension: {ext} de archivo {path}")
+    ext = str(ext[1]).lower()
+    logger.debug(f"Extension: {ext} de archivo {path}".encode("utf-8"))
     for exclude in config.EXCLUDE_EXT:
         if ext == exclude:
             logger.debug(f"Extension {ext} dentro de lista de Exclusion")
@@ -367,7 +408,7 @@ def mover_archivo(ruta_origen, carpeta_destino):
                 nombre_archivo = os.path.splitext(nombre_archivo_origen)[:1]
                 extension = os.path.splitext(nombre_archivo_origen)[1:]
                 nombre_archivo_origen = str(nombre_archivo[0]) + f" ({contador})"+str(extension[0])
-                logger.info(f"Archivo ya existe.Se renombra archivo a {nombre_archivo_origen}")
+                logger.info(f"Archivo ya existe.Se renombra archivo a {nombre_archivo_origen}".encode("utf-8"))
                 contador += 1
             # comando = f'move "{ruta_origen}" "{carpeta_destino+"\\"+nombre_archivo_origen}"'
             # proceso = subprocess.run(comando, shell=True, capture_output=True)
@@ -376,7 +417,7 @@ def mover_archivo(ruta_origen, carpeta_destino):
             # else:
             #     logger.error(f"Error al mover archivo: {proceso.stderr.decode('utf-8')}")
             os.system(f'move "{ruta_origen}" "{carpeta_destino+"\\"+nombre_archivo_origen}"')
-            logger.debug(f"Se mueve archivo {ruta_origen}")
+            logger.debug(f"Se mueve archivo {ruta_origen}".encode("utf-8"))
         else:
             return False
         return True
@@ -385,81 +426,22 @@ def mover_archivo(ruta_origen, carpeta_destino):
         traceback.print_exc()
         logger.error(f"Error al mover el archivo: {e}")
 
-           
+def obtiene_de_archivos_byHash(hash):
+    try:
+        conn = sqlite3.connect(config.DATA_BASE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT ruta, hash, fecha FROM archivos WHERE hash = ?",((hash,)))
+        conn.commit()
+        respuesta = cursor.fetchone()
+        return respuesta
+    except sqlite3.Error as e:
+        logger.error(f"Error SQLITE {e}")
+    finally:
+        cursor.close()
+        conn.close()
 
-############################ INICIO DE LA APP #############################
-
-ConexionSql()
-if 'INFO' != LOG_LEVEL and 'DEBUG' != LOG_LEVEL:
-    print(f"Nivel de Log: {LOG_LEVEL}")
-logger.info("Se inicia programa exitosamente")
-
-print(" Comparador de duplicidad de Archivos - Se pueden realizar configuraciones de la app en config.py")
-if config.SCANALL:
-    logger.debug(f"Se Evaluan todos las extensiones ya que esta SCANALL como True")
-ListaDuplicados = []
-losmuevo = 0
-while True:    
-    directorio = input("Ingrese directorio a Evaluar: ")    
-    if os.path.exists(directorio):
-        directorio = directorio.strip()
-        logger.info(f"Se analiza directorio: {directorio}")
-        while True:
-            recursivo = input("Desea comparar archivos de manera recursiva? Si/No: ")
-            while True:
-                mover_duplicados = input("Desea Mover los archivos duplicados a una Carpeta? Si/No: ")
-                if "Si" in mover_duplicados:
-                    losmuevo = 1
-                    break
-                elif "No" in mover_duplicados:
-                    losmuevo = 0
-                    break
-                else:
-                    print ("Debe elegir Si o No")                    
-            if "Si" in str(recursivo):
-                List = listaRecursivaArchivos(directorio)
-                logger.debug(f"Se procesarán todos estos archivos: {List}")
-                for a in List:
-                    hash = hashfile(a)
-                    if hash:
-                        ruta_db = validar_registro_existente(a,hash)
-                        if not ruta_db:
-                            inserta_registro(a,hash)
-                        else:
-                            fecha = os.path.getctime(a)
-                            update_registro(a,hash,fecha)                            
-                            ListaDuplicados.append((a,ruta_db))
-                            print("Archivo Duplicado: " +a+ " , " +ruta_db)   
-                            logger.debug("Archivo Duplicado: " +a+ " , " +ruta_db)                 
-                break
-            elif "No" in str(recursivo):
-                List = listaDirectorio(directorio)
-                for ruta, tipo in List:
-                    if tipo in "Archivo":
-                        hash = hashfile(ruta)
-                        ruta_db = validar_registro_existente(ruta,hash)
-                        if not ruta_db:
-                            inserta_registro(ruta,hash)
-                        else:
-                            ListaDuplicados.append((ruta,ruta_db))
-                            fecha = os.path.getctime(ruta)
-                            update_registro(ruta,hash,os.path.getctime(ruta))                            
-                            print("Archivo Duplicado: " + ruta + " , " +ruta_db) 
-                            logger.debug("Archivo Duplicado: " + ruta + " , " +ruta_db)          
-                break
-            else:
-                print("Debe ingresar Si o No: ")
-        break
-    else:
-        print("Debe ingresar un Directorio Valido")
-
-with open ('Resultado.csv','w') as resultadocsv:
-    for archivo1, archivo2 in ListaDuplicados:
-        resultadocsv.write(archivo1+","+archivo2+"\n")
-    logger.info("Se crea el archivo Resultado.csv con la informacion procesada")
-
-    
-if losmuevo == 1 and ListaDuplicados:
+def mueve_archivos_resultado(ListaDuplicados):
+   
     ruta_actual = os.path.dirname(os.path.abspath(__file__))
     
 # Nombre de la nueva carpeta a crear
@@ -485,6 +467,280 @@ if losmuevo == 1 and ListaDuplicados:
         logger.debug("No se encuentra archivo. Puede darse por que se movio en el ciclo anterior y no hay como volver a compararlo.")
         logger.error(e)
         traceback.print_exc()
+
+def Analisis_recursivo(directorio):
+    List = listaRecursivaArchivos(directorio)
+    logger.debug(f"Se procesarán todos estos archivos: {List}".encode("utf-8"))
+    for a in List:
+        hash = hashfile(a)
+        if hash:
+            ruta_db = validar_registro_existente(a,hash)
+            if not ruta_db:
+                inserta_registro(a,hash)
+            else:
+                fecha = os.path.getctime(a)
+                update_registro(a,hash,fecha)                            
+                ListaDuplicados.append((a,ruta_db))
+                print("Archivo Duplicado: " +a+ " , " +ruta_db)   
+                logger.debug(str("Archivo Duplicado: " +a+ " , " +ruta_db).encode("utf-8"))        
+
+def Analisis_no_recursivo(directorio):
+    List = listaDirectorio(directorio)
+    for ruta, tipo in List:
+        if tipo in "Archivo":
+            hash = hashfile(ruta)
+            ruta_db = validar_registro_existente(ruta,hash)
+            if not ruta_db:
+                inserta_registro(ruta,hash)
+            else:
+                ListaDuplicados.append((ruta,ruta_db))
+                update_registro(ruta,hash,os.path.getctime(ruta))                            
+                print("Archivo Duplicado: " + ruta + " , " +ruta_db) 
+                logger.debug("Archivo Duplicado: " + ruta + " , " +ruta_db)         
+
+def retorna_resultado_json():
+    respuesta_json = []
+    contador = 0
+    Lista=listaCompletaDuplicados()
+    print(Lista)
+    for ruta,hash,fecha in Lista:
+        contador += 1
+        ruta_db,hash_db,fecha_db = obtiene_de_archivos_byHash(hash)
+        datos_procesados = {
+             'Ruta_Duplicada':ruta,
+             'Fecha_Duplicada':fecha,
+             'Ruta_archivo':ruta_db,
+             'fecha_db':fecha_db
+        } 
+        respuesta_json.append(datos_procesados)
+        response = {
+            'message': 'Ejecucion Correcta',
+            'data':respuesta_json
+        }        
+    return jsonify(response)
+          
+def limpia_db():
+    try:
+        conn = sqlite3.connect(config.DATA_BASE)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM archivos")
+        cursor.execute("DELETE FROM archivos_duplicados")
+        conn.commit()
+        cursor.close
+        conn.close()
+    except sqlite3.Error as e:
+        print (e)
+
+##########################################FUNCIONES API#############################
+
+app = Flask(__name__) # type: ignore
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = 3600  # 1 hora en segundos
+app.config["JWT_ALGORITHM"] = "HS256" 
+app.config['JWT_SECRET_KEY'] = SECRET_KEY
+jwt = JWTManager(app)
+jwt.init_app(app)
+
+##el @app.route va antes de la funcion a llamar
+@app.route("/login", methods=["POST"])
+def login_api():
+    data_login = request.get_json()
+    user = data_login.get('usuario')
+    password = data_login.get('password')
+    print(data_login)
+    print("User",user," USER_API ",USER_API)
+    print(password,PASSWORD_API)
+    if USER_API == user:
+        if PASSWORD_API ==password:
+            access_token = create_access_token(identity=user)
+            return jsonify({"access_token": access_token})
+        else:
+             return jsonify({"error": "Credenciales inválidas"}), 401 
+    else:
+             return jsonify({"error": "Credenciales inválidas"}), 401 
+
+
+ 
+@app.route('/api',methods=['POST'])
+@jwt_required()
+def Inicia_Api():
+    # Obtiene los parámetros del cuerpo de la solicitud
+
+    termino = 0
+    mododesatendido = 1
+    authorization_header = request.headers.get("Authorization")
+    if authorization_header:
+        token = authorization_header.split(" ")[1]
+        try:
+            print("Token:",token)
+            payload = jwt_function.decode(token, app.config["JWT_SECRET_KEY"], algorithms=["HS256"])
+            print(payload)
+        except Exception:
+            traceback.print_exc()
+            return jsonify({"error": "Token JWT inválido"}), 401
+
+        data = request.get_json()
+        ruta = data.get('ruta')
+        recursivo = str(data.get('recursivo'))
+        mueve = data.get('mueve')
+        limpia_db()
+        if os.path.isdir(ruta):
+            if recursivo.lower() == 'yes':
+                Analisis_recursivo(ruta)
+                response = retorna_resultado_json()
+                termino = 1
+            elif recursivo.lower() == 'No':
+                Analisis_no_recursivo(ruta)  
+                response = retorna_resultado_json()      
+                termino = 1
+        # Procesa los parámetros y crea una respuesta
+            if termino == 1 and mueve.lower() == 'yes':
+                mueve_archivos_resultado(ListaDuplicados)
+        else:
+            response = {            
+                'message': 'La ruta proporcionada no existe.'
+            }
+            response = jsonify(response)
+        # Devuelve la respuesta como JSON
+        return response # type: ignore
+
+
+    
+
+    
+
+############################ INICIO DE LA APP #############################
+
+
+
+if argumentos.__len__() > 1:
+    mododesatendido = 1
+
+for arg in argumentos[1:]:
+    if arg.startswith("-l"):
+        argv_ruta = arg.split("-l:")[1:][0]
+        
+        if os.path.isdir(argv_ruta):
+            argv_val_ruta = 1
+           
+    elif arg == "-a":
+        if __name__ == '__main__':
+            app.run(debug=True)
+        
+        Inicia_Api()
+    elif arg == "-r":
+        if argv_val_ruta == 1:
+            argv_recursivo = 1            
+        else:
+            print("No se definio una ruta a analizar")
+            print("")
+            sys.exit(0)
+    elif arg == "-m":
+        if argv_val_ruta == 1:
+            argv_mov = 1
+        else:
+            print("No se definio una ruta a analizar")
+            print("")
+            sys.exit(0)
+    elif arg == "-h":
+        print("Ayuda:")
+        print("Ejecución Manual",)
+        print(f"     {sys.argv[0]}")
+        print(f" El modo {sys.argv[0]} permite el modo manual de la aplicación donde no será necesario el uso de argumentos. La aplicación")
+        print(f"realizará las consultas necesarias para poder funcionar.")
+        print("")
+        print(f"     {sys.argv[0]} -l:C:\\Carpeta\\a\\analizar -OPCIONES")
+        print(f" Este modo con argumentos por consola permitirá integrar el script a otra aplicación que necesite usarla")
+        print("")
+        print("Opciones:")
+        print("")
+        print(" -h          Muestra este menú de ayuda.")
+        print(" -r          Realiza análisis recursivo. Carpeta y subcarpetas.")
+        print(" -m          Mueve los archivos duplicados a una carpeta 'ElementosDuplicados', esta carpeta esta en el mismo")
+        print("             lugar que esta Aplicacion")
+        print(" -a          Modo API: Esta opcion no va acompañada con otros argumentos. Se levantará un servicio API REST para consultas.")
+        print("")
+        sys.exit(0)
+    else:
+        print(f"Debe de seleccionar las opciones correctas, para mas ayuda ejecute {sys.argv[0]} -h")
+        print("")
+        sys.exit(0)
+
+
+###########################################################################
+
+
+ConexionSql()
+if 'INFO' != LOG_LEVEL and 'DEBUG' != LOG_LEVEL:
+    print(f"Nivel de Log: {LOG_LEVEL}")
+logger.info("Se inicia programa exitosamente")
+
+if mododesatendido == 0:
+    print(" Comparador de duplicidad de Archivos - Se pueden realizar configuraciones de la app en config.py")
+if config.SCANALL:
+    logger.debug(f"Se Evaluan todos las extensiones ya que esta SCANALL como True")
+
+losmuevo = 0
+while True:    
+    if mododesatendido == 0:
+        directorio = input("Ingrese directorio a Evaluar: ")    
+    elif mododesatendido == 1:
+        if argv_val_ruta == 1:
+            directorio = argv_ruta
+        else:
+            sys.exit(1)
+    if os.path.exists(directorio):
+        directorio = directorio.strip()
+        logger.info(f"Se analiza directorio: {directorio}")
+        while True:
+            if mododesatendido == 0:
+                recursivo = input("Desea comparar archivos de manera recursiva? Si/No: ")
+            elif mododesatendido == 1:
+                if argv_recursivo == 1:
+                    recursivo = "Si"
+                elif argv_recursivo == 0:
+                    recursivo = "No"
+            while True:
+                if mododesatendido == 0:
+                    mover_duplicados = input("Desea Mover los archivos duplicados a una Carpeta? Si/No: ")
+                elif mododesatendido == 1:
+                    if argv_mov == 0:
+                        mover_duplicados = 'No'
+                    elif argv_mov == 1:
+                        mover_duplicados = 'Si'
+                if "Si" in mover_duplicados:
+                    losmuevo = 1
+                    break
+                elif "No" in mover_duplicados:
+                    losmuevo = 0
+                    break
+                else:
+                    print ("Debe elegir Si o No")                    
+            if "Si" in str(recursivo):
+                Analisis_recursivo(directorio)         
+                break
+            elif "No" in str(recursivo):
+                Analisis_no_recursivo(directorio)
+                break
+            else:
+                print("Debe ingresar Si o No: ")
+        break
+    else:
+        print("Debe ingresar un Directorio Valido")
+
+try:
+    with open ('Resultado.csv','w') as resultadocsv:
+        for archivo1, archivo2 in ListaDuplicados:
+            escrituraArchivo = str(archivo1)+","+str(archivo2)+"\n"
+            
+            resultadocsv.write(str(escrituraArchivo.encode("utf-8")))
+        logger.info("Se crea el archivo Resultado.csv con la informacion procesada")
+except TypeError as e:
+    traceback.print_exc()
+    
+    
+if losmuevo == 1 and ListaDuplicados:
+    mueve_archivos_resultado(ListaDuplicados)
+
 
 logger.info("Se cierra APP")
 cerrar_loggers(logger)
