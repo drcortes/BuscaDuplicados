@@ -6,7 +6,7 @@ import logging
 import traceback
 import string
 import random
-import jwt as jwt_function type: ignore
+import jwt as jwt_function #type: ignore
 from flask import Flask, request, jsonify # type: ignore
 from flask_jwt_extended import create_access_token, jwt_required, JWTManager, get_jwt_identity # type: ingore
 
