@@ -23,7 +23,7 @@
 
 1. Clona este repositorio:
    ```bash
-   git clone https://github.com/tuusuario/DoubleFiles.git
+   git clone https://github.com/drcortes/DoubleFiles.git
    ```
 2. Navega al directorio del proyecto:
     ```bash
@@ -75,7 +75,7 @@ Además se debe de enviar la variable 'recursivo' y 'mueve' con argumento yes, p
 y además pueda mover los archivos a la carpeta ElementosDuplicados que se creará automaticamente en la misma ruta donde se encuentre el script corriendo.
 
 EJ: 
-```bash
+```json
   {
    "ruta": "C:\\Users\\diego\\OneDrive\\Python\\Herramientas\\Prueba",
    "recursivo": "yes",
